@@ -64,8 +64,8 @@ all: main-build
 main-build: TrabajoFinal.elf secondary-outputs
 
 # Tool invocations
-TrabajoFinal.elf TrabajoFinal.map: $(OBJS) $(USER_OBJS) C:\Users\roirt\STM32CubeIDE\workspace_1.10.1\TrabajoFinal\STM32F411RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "TrabajoFinal.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\roirt\STM32CubeIDE\workspace_1.10.1\TrabajoFinal\STM32F411RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="TrabajoFinal.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+TrabajoFinal.elf TrabajoFinal.map: $(OBJS) $(USER_OBJS) C:\Users\roirt\Documents\GitHub\RTOS\STM32F411RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "TrabajoFinal.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\roirt\Documents\GitHub\RTOS\STM32F411RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="TrabajoFinal.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
