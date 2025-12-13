@@ -1,6 +1,7 @@
 #MicroXplorer Configuration settings - do not modify
+FREERTOS.Events01=modeFlags,Dynamic,NULL
 FREERTOS.FootprintOK=true
-FREERTOS.IPParameters=Tasks01,FootprintOK,Queues01,Mutexes01
+FREERTOS.IPParameters=Tasks01,FootprintOK,Queues01,Mutexes01,Events01
 FREERTOS.Mutexes01=controlMutex,Dynamic,NULL
 FREERTOS.Queues01=myQueue01,32,char,0,Dynamic,NULL,NULL
 FREERTOS.Tasks01=defaultTask,24,128,StartDefaultTask,Default,NULL,Dynamic,NULL,NULL;TestTask01,8,128,TestTask,Default,NULL,Dynamic,NULL,NULL;PWM,8,128,PWMTask,Default,NULL,Dynamic,NULL,NULL

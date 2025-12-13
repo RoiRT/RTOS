@@ -32,6 +32,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PWM_MAX 999
+#define DEADZONE 50
+#define MODE_MANUAL (1 << 0)
+#define MODE_AUTO   (1 << 1)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,19 +80,16 @@ osMutexId_t controlMutexHandle;
 const osMutexAttr_t controlMutex_attributes = {
   .name = "controlMutex"
 };
+/* Definitions for modeFlags */
+osEventFlagsId_t modeFlagsHandle;
+const osEventFlagsAttr_t modeFlags_attributes = {
+  .name = "modeFlags"
+};
 /* USER CODE BEGIN PV */
 uint8_t rx_byte;
 uint8_t joy_x;   // 0–100
 uint8_t joy_y;   // 0–100
-uint8_t modo;    // 0 auto, 1 manual
 char uart_buffer[20];
-uint8_t uart_index = 0;
-
-typedef struct {
-	uint8_t modo;
-	uint8_t joy_x;
-	uint8_t joy_y;
-} ControlMsg_t;
 
 /* USER CODE END PV */
 
@@ -102,12 +103,55 @@ void StartDefaultTask(void *argument);
 void TestTask(void *argument);
 void PWMTask(void *argument);
 
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static inline uint32_t map_float_to_pwm(float v)
+{
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    return (uint32_t)(v * PWM_MAX);
+}
+
+void DriveFromJoystick(uint8_t x, uint8_t y)
+{
+    float speed, turn;
+    float left, right;
+
+    // Zona muerta: sin marcha atrás
+    if (y < DEADZONE)
+    {
+        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+        return;
+    }
+
+    // Normalización
+    speed = (float)(y - DEADZONE) / 50.0f;    // 0..1
+    turn  = ((float)x - 50.0f) / 50.0f;        // -1..1
+
+    // Control diferencial
+    left  = speed * (1.0f - turn);
+    right = speed * (1.0f + turn);
+
+    // Limitar
+    if (left < 0) left = 0;
+    if (right < 0) right = 0;
+    if (left > 1) left = 1;
+    if (right > 1) right = 1;
+
+    // Aplicar PWM
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, map_float_to_pwm(right));
+}
+
+void DriveAuto(void){
+	//TODO: Crear modo auto
+}
 
 /* USER CODE END 0 */
 
@@ -145,6 +189,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -187,8 +232,11 @@ int main(void)
 	/* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
+  /* creation of modeFlags */
+  modeFlagsHandle = osEventFlagsNew(&modeFlags_attributes);
+
   /* USER CODE BEGIN RTOS_EVENTS */
-	/* add events, ... */
+  osEventFlagsSet(modeFlagsHandle, MODE_MANUAL);
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -460,17 +508,14 @@ void TestTask(void *argument)
 
 	for (;;) {
 		// Espera bloqueante: eficiente
-		if (osMessageQueueGet(myQueue01Handle, &c, NULL, osWaitForever)
-				== osOK) {
+		if (osMessageQueueGet(myQueue01Handle, &c, NULL, osWaitForever)== osOK) {
 			// 1) Modo M / A
 			if (c == 'C') {
-				osMutexAcquire(controlMutexHandle, osWaitForever);
-				modo = 1;
-				osMutexRelease(controlMutexHandle);
+				osEventFlagsClear(modeFlagsHandle, MODE_AUTO);
+				osEventFlagsSet(modeFlagsHandle, MODE_MANUAL);
 			} else if (c == 'c') {
-				osMutexAcquire(controlMutexHandle, osWaitForever);
-				modo = 0;
-				osMutexRelease(controlMutexHandle);
+			    osEventFlagsClear(modeFlagsHandle, MODE_MANUAL);
+			    osEventFlagsSet(modeFlagsHandle, MODE_AUTO);
 			}
 
 			// 2) Joystick Xnnn,Ynnn
@@ -507,21 +552,50 @@ void PWMTask(void *argument)
 {
   /* USER CODE BEGIN PWMTask */
   /* Infinite loop */
-    uint32_t duty = 3000;                 // valor inicial
-    uint32_t duty_max = __HAL_TIM_GET_AUTORELOAD(&htim3);   // 3999
-    uint32_t step = 10;                   // incremento por ciclo
-
+    uint8_t x, y;
+    uint32_t flags;
     for(;;)
     {
-        if (duty < duty_max)
-        {
-            duty += step;
-            if (duty >= duty_max) duty = 3000;
+        flags = osEventFlagsWait(
+					modeFlagsHandle,
+					MODE_MANUAL | MODE_AUTO,
+					osFlagsWaitAny,
+					osWaitForever
+				);
 
-            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
-        }
+        // ===== MODO MANUAL =====
+		if (flags & MODE_MANUAL)
+		{
+			for (;;)
+			{
+				flags = osEventFlagsGet(modeFlagsHandle);
+				if (!(flags & MODE_MANUAL))
+					break;
 
-        osDelay(90);   // velocidad de subida (20 ms por paso)
+				osMutexAcquire(controlMutexHandle, osWaitForever);
+				x = joy_x;
+				y = joy_y;
+				osMutexRelease(controlMutexHandle);
+
+				DriveFromJoystick(x, y);
+
+				osDelay(20);   // 50 Hz
+			}
+		}
+		// ===== MODO AUTOMÁTICO =====
+		if (flags & MODE_AUTO)
+		{
+			for (;;)
+			{
+				flags = osEventFlagsGet(modeFlagsHandle);
+				if (!(flags & MODE_AUTO))
+					break;
+
+				DriveAuto();
+
+				osDelay(50);   // control más lento
+			}
+		}
     }
   /* USER CODE END PWMTask */
 }
