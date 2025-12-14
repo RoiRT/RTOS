@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include <stdlib.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +48,7 @@
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
-UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart1;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -87,8 +88,8 @@ const osEventFlagsAttr_t modeFlags_attributes = {
 };
 /* USER CODE BEGIN PV */
 uint8_t rx_byte;
-uint8_t joy_x;   // 0–100
-uint8_t joy_y;   // 0–100
+uint8_t joy_x=50;   // 0–100
+uint8_t joy_y=50;   // 0–100
 char uart_buffer[20];
 
 /* USER CODE END PV */
@@ -96,13 +97,12 @@ char uart_buffer[20];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_USART1_UART_Init(void);
 void StartDefaultTask(void *argument);
 void TestTask(void *argument);
 void PWMTask(void *argument);
-
 
 /* USER CODE BEGIN PFP */
 
@@ -126,7 +126,7 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     if (y < DEADZONE)
     {
         __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 0);
         return;
     }
 
@@ -146,12 +146,39 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
 
     // Aplicar PWM
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, map_float_to_pwm(right));
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
 
 void DriveAuto(void){
 	//TODO: Crear modo auto
 }
+
+int parseXY(const char *buf, uint8_t *x, uint8_t *y)
+{
+    if (buf[0] != 'X') return 0;
+
+    int i = 1;
+    int vx = 0, vy = 0;
+
+    if (buf[i] < '0' || buf[i] > '9') return 0;
+
+    while (buf[i] >= '0' && buf[i] <= '9')
+        vx = vx * 10 + (buf[i++] - '0');
+
+    if (buf[i++] != 'Y') return 0;
+
+    if (buf[i] < '0' || buf[i] > '9') return 0;
+
+    while (buf[i] >= '0' && buf[i] <= '9')
+        vy = vy * 10 + (buf[i++] - '0');
+
+    if (vx > 100 || vy > 100) return 0;
+
+    *x = vx;
+    *y = vy;
+    return 1;
+}
+
 
 /* USER CODE END 0 */
 
@@ -183,11 +210,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_TIM2_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  //HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   /* USER CODE END 2 */
@@ -413,35 +441,35 @@ static void MX_TIM3_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
+  * @brief USART1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+static void MX_USART1_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART2_Init 0 */
+  /* USER CODE BEGIN USART1_Init 0 */
 
-  /* USER CODE END USART2_Init 0 */
+  /* USER CODE END USART1_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
+  /* USER CODE BEGIN USART1_Init 1 */
 
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 9600;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
-	HAL_UART_Receive_IT(&huart2, (uint8_t*) &rx_byte, 1);
-  /* USER CODE END USART2_Init 2 */
+  /* USER CODE BEGIN USART1_Init 2 */
+  HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -454,21 +482,21 @@ static void MX_GPIO_Init(void)
 {
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
 }
 
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == USART2) {
+	if (huart->Instance == USART1) {
 		char c = rx_byte;
 
 		// Meter el carácter en la cola SIN BLOQUEO (desde ISR)
 		osMessageQueuePut(myQueue01Handle, &c, 0, 0);
 
 		// Reiniciar recepción
-		HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+		HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 	}
 }
 
@@ -520,20 +548,23 @@ void TestTask(void *argument)
 
 			// 2) Joystick Xnnn,Ynnn
 			else {
-				if ((c == '\n') || (c == '\r')) {
+				if ((c == '\n') || (c == '\r') || (c == '>')) {
 					buffer[idx] = '\0';
 
-					int x, y;
-					if (sscanf(buffer, "X%d,Y%d", &x, &y) == 2) {
+					uint8_t x, y;
+					if (parseXY(buffer, &x, &y)) {
 						osMutexAcquire(controlMutexHandle, osWaitForever);
-						joy_x = x;
-						joy_y = y;
+						joy_x = abs((int)x - 100);
+						joy_y = abs((int)y - 100);
 						osMutexRelease(controlMutexHandle);
 					}
 					memset(buffer, 0, sizeof(buffer));
 					idx = 0;
 				} else if (idx < sizeof(buffer) - 1) {
 					buffer[idx++] = c;
+				} else {
+				    memset(buffer, 0, sizeof(buffer));
+				    idx = 0;
 				}
 			}
 		}
@@ -559,7 +590,7 @@ void PWMTask(void *argument)
         flags = osEventFlagsWait(
 					modeFlagsHandle,
 					MODE_MANUAL | MODE_AUTO,
-					osFlagsWaitAny,
+					osFlagsWaitAny | osFlagsNoClear,
 					osWaitForever
 				);
 
@@ -582,7 +613,7 @@ void PWMTask(void *argument)
 				osDelay(20);   // 50 Hz
 			}
 		}
-		// ===== MODO AUTOMÁTICO =====
+		// ===== MODO AUTOM�?TICO =====
 		if (flags & MODE_AUTO)
 		{
 			for (;;)
