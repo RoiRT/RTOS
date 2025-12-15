@@ -19,11 +19,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include <stdlib.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,6 +46,7 @@
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart1;
 
@@ -71,6 +71,13 @@ const osThreadAttr_t PWM_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for SensorUTask01 */
+osThreadId_t SensorUTask01Handle;
+const osThreadAttr_t SensorUTask01_attributes = {
+  .name = "SensorUTask01",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for myQueue01 */
 osMessageQueueId_t myQueue01Handle;
 const osMessageQueueAttr_t myQueue01_attributes = {
@@ -92,6 +99,11 @@ uint8_t joy_x=50;   // 0–100
 uint8_t joy_y=50;   // 0–100
 char uart_buffer[20];
 
+volatile uint32_t ic_rise = 0;
+volatile uint32_t ic_fall = 0;
+volatile uint8_t capture_done = 0;
+float Distance_cm = 0.0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,9 +112,11 @@ static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM4_Init(void);
 void StartDefaultTask(void *argument);
 void TestTask(void *argument);
 void PWMTask(void *argument);
+void SensorUTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -213,6 +227,7 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   //HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
   HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
@@ -255,6 +270,9 @@ int main(void)
 
   /* creation of PWM */
   PWMHandle = osThreadNew(PWMTask, NULL, &PWM_attributes);
+
+  /* creation of SensorUTask01 */
+  SensorUTask01Handle = osThreadNew(SensorUTask, NULL, &SensorUTask01_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 	/* add threads, ... */
@@ -441,6 +459,69 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 15;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 65535;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
+  if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -480,10 +561,21 @@ static void MX_USART1_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 }
 
@@ -498,6 +590,30 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 		// Reiniciar recepción
 		HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 	}
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM3)
+    {
+        if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+        {
+            ic_rise = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+        }
+        else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+        {
+            ic_fall = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+
+            uint32_t diff;
+            if (ic_fall >= ic_rise)
+                diff = ic_fall - ic_rise;
+            else
+                diff = (htim->Init.Period - ic_rise) + ic_fall;
+
+            Distance_cm = diff / 58.0f;
+            capture_done = 1;
+        }
+    }
 }
 
 /* USER CODE END 4 */
@@ -629,6 +745,38 @@ void PWMTask(void *argument)
 		}
     }
   /* USER CODE END PWMTask */
+}
+
+/* USER CODE BEGIN Header_SensorUTask */
+/**
+* @brief Function implementing the SensorUTask01 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_SensorUTask */
+void SensorUTask(void *argument)
+{
+  /* USER CODE BEGIN SensorUTask */
+	HAL_TIM_Base_Start(&htim3);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
+	for(;;)
+	{
+		// 1. Resetear el flag de medición
+		capture_done = 0;
+
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+		osDelay(1); // Usamos FreeRTOS delay (1ms > 10us)
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+
+		while (capture_done != 1)
+		{
+
+		}
+
+		osDelay(500); // Medir cada 500ms
+	}
+  /* USER CODE END SensorUTask */
 }
 
 /**
