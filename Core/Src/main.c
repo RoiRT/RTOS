@@ -36,6 +36,14 @@
 #define DEADZONE 50
 #define MODE_MANUAL (1 << 0)
 #define MODE_AUTO   (1 << 1)
+
+#define AUTO_STOP_CM     15.0f
+#define AUTO_SLOW_CM     30.0f
+
+#define AUTO_FAST_SPEED  0.6f
+#define AUTO_SLOW_SPEED  0.3f
+#define AUTO_TURN_SPEED  0.4f
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -83,10 +91,20 @@ osMessageQueueId_t myQueue01Handle;
 const osMessageQueueAttr_t myQueue01_attributes = {
   .name = "myQueue01"
 };
+/* Definitions for myQueue02 */
+osMessageQueueId_t myQueue02Handle;
+const osMessageQueueAttr_t myQueue02_attributes = {
+  .name = "myQueue02"
+};
 /* Definitions for controlMutex */
 osMutexId_t controlMutexHandle;
 const osMutexAttr_t controlMutex_attributes = {
   .name = "controlMutex"
+};
+/* Definitions for sensorMutex */
+osMutexId_t sensorMutexHandle;
+const osMutexAttr_t sensorMutex_attributes = {
+  .name = "sensorMutex"
 };
 /* Definitions for modeFlags */
 osEventFlagsId_t modeFlagsHandle;
@@ -94,15 +112,13 @@ const osEventFlagsAttr_t modeFlags_attributes = {
   .name = "modeFlags"
 };
 /* USER CODE BEGIN PV */
-uint8_t rx_byte;
+volatile uint8_t rx_byte;
 uint8_t joy_x=50;   // 0–100
 uint8_t joy_y=50;   // 0–100
-char uart_buffer[20];
 
 volatile uint32_t ic_rise = 0;
 volatile uint32_t ic_fall = 0;
-volatile uint8_t capture_done = 0;
-float Distance_cm = 0.0;
+float Distance_cm = 0.0f;
 
 /* USER CODE END PV */
 
@@ -163,8 +179,42 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
 
-void DriveAuto(void){
-	//TODO: Crear modo auto
+void DriveAuto(void)
+{
+    float distance;
+    float left = 0.0f, right = 0.0f;
+
+    /* Leer distancia protegida */
+    osMutexAcquire(controlMutexHandle, osWaitForever);
+    distance = Distance_cm;
+    osMutexRelease(controlMutexHandle);
+
+    if (distance <= 0.0f)
+    {
+        left = 0.0f;
+        right = 0.0f;
+    }
+    else if (distance < AUTO_STOP_CM)
+    {
+        // Obstáculo muy cerca → girar
+        left  = AUTO_TURN_SPEED;
+        right = 0.0f;
+    }
+    else if (distance < AUTO_SLOW_CM)
+    {
+        // Cerca → avanzar lento
+        left  = AUTO_SLOW_SPEED;
+        right = AUTO_SLOW_SPEED;
+    }
+    else
+    {
+        // Libre → avanzar normal
+        left  = AUTO_FAST_SPEED;
+        right = AUTO_FAST_SPEED;
+    }
+
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
 
 int parseXY(const char *buf, uint8_t *x, uint8_t *y)
@@ -241,6 +291,9 @@ int main(void)
   /* creation of controlMutex */
   controlMutexHandle = osMutexNew(&controlMutex_attributes);
 
+  /* creation of sensorMutex */
+  sensorMutexHandle = osMutexNew(&sensorMutex_attributes);
+
   /* USER CODE BEGIN RTOS_MUTEX */
 	/* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -256,6 +309,9 @@ int main(void)
   /* Create the queue(s) */
   /* creation of myQueue01 */
   myQueue01Handle = osMessageQueueNew (32, sizeof(char), &myQueue01_attributes);
+
+  /* creation of myQueue02 */
+  myQueue02Handle = osMessageQueueNew (32, sizeof(uint32_t), &myQueue02_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
 	/* add queues, ... */
@@ -594,7 +650,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance == TIM3)
+    if (htim->Instance == TIM4)
     {
         if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
         {
@@ -610,8 +666,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
             else
                 diff = (htim->Init.Period - ic_rise) + ic_fall;
 
-            Distance_cm = diff / 58.0f;
-            capture_done = 1;
+            osMessageQueuePut(myQueue02Handle, &diff, 0, 0);
         }
     }
 }
@@ -729,7 +784,7 @@ void PWMTask(void *argument)
 				osDelay(20);   // 50 Hz
 			}
 		}
-		// ===== MODO AUTOM�?TICO =====
+		// ===== MODO AUTOM�?TICO =====
 		if (flags & MODE_AUTO)
 		{
 			for (;;)
@@ -757,24 +812,40 @@ void PWMTask(void *argument)
 void SensorUTask(void *argument)
 {
   /* USER CODE BEGIN SensorUTask */
-	HAL_TIM_Base_Start(&htim3);
-	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
+	uint32_t diff;
+    uint32_t flags;
+    float distance;
+
+	HAL_TIM_Base_Start(&htim4);
+	HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);
+	HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_2);
+
 	for(;;)
 	{
+		flags = osEventFlagsWait(
+		                    modeFlagsHandle,
+		                    MODE_AUTO,
+		                    osFlagsWaitAny | osFlagsNoClear,
+		                    osWaitForever
+		                );
+
+		if (flags & MODE_AUTO) {
 		// 1. Resetear el flag de medición
-		capture_done = 0;
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+			osDelay(1); // Usamos FreeRTOS delay (1ms > 10us)
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
 
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-		osDelay(1); // Usamos FreeRTOS delay (1ms > 10us)
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+			//if (osMessageQueueGet(myQueue02Handle, &diff, NULL, osWaitForever) == osOK)
+			if (osMessageQueueGet(myQueue02Handle, &diff, NULL, 50) == osOK)
+			{
+				distance = diff / 58.0f;
+				osMutexAcquire(controlMutexHandle, osWaitForever);
+				Distance_cm = distance;
+				osMutexRelease(controlMutexHandle);
+			}
 
-		while (capture_done != 1)
-		{
-
+			osDelay(50); // Medir cada 500ms
 		}
-
-		osDelay(500); // Medir cada 500ms
 	}
   /* USER CODE END SensorUTask */
 }
