@@ -538,7 +538,7 @@ static void MX_TIM4_Init(void)
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim4.Init.Period = 65535;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
   {
     Error_Handler();
@@ -558,16 +558,11 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_BOTHEDGE;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
   sConfigIC.ICFilter = 0;
   if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -650,25 +645,32 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance == TIM4)
-    {
-        if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-        {
-            ic_rise = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-        }
-        else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
-        {
-            ic_fall = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+    if (htim->Instance != TIM4) return;
 
-            uint32_t diff;
-            if (ic_fall >= ic_rise)
-                diff = ic_fall - ic_rise;
-            else
-                diff = (htim->Init.Period - ic_rise) + ic_fall;
+    if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+	{
 
-            osMessageQueuePut(myQueue02Handle, &diff, 0, 0);
-        }
-    }
+		static uint32_t ic_rise = 0;
+        static uint8_t waiting_rise = 1;  // empezar esperando subida
+        uint32_t ic_val = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+		if (waiting_rise) // pin ECHO, HIGH = subida
+		{
+			ic_rise = ic_val;
+			waiting_rise  = 0;
+		}
+		else
+		{
+			uint32_t diff;
+			if (ic_val >= ic_rise)
+				diff = ic_val - ic_rise;
+			else
+				diff = (htim->Init.Period - ic_rise) + ic_val;
+
+			osMessageQueuePut(myQueue02Handle, &diff, 0, 0);
+			waiting_rise = 1;
+		}
+	}
 }
 
 /* USER CODE END 4 */
@@ -784,7 +786,7 @@ void PWMTask(void *argument)
 				osDelay(20);   // 50 Hz
 			}
 		}
-		// ===== MODO AUTOM�?TICO =====
+		// ===== MODO AUTOM�?TICO =====
 		if (flags & MODE_AUTO)
 		{
 			for (;;)
@@ -795,7 +797,7 @@ void PWMTask(void *argument)
 
 				DriveAuto();
 
-				osDelay(50);   // control más lento
+				osDelay(500);   // control más lento
 			}
 		}
     }
@@ -818,7 +820,6 @@ void SensorUTask(void *argument)
 
 	HAL_TIM_Base_Start(&htim4);
 	HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);
-	HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_2);
 
 	for(;;)
 	{
@@ -844,7 +845,7 @@ void SensorUTask(void *argument)
 				osMutexRelease(controlMutexHandle);
 			}
 
-			osDelay(50); // Medir cada 500ms
+			osDelay(500); // Medir cada 500ms
 		}
 	}
   /* USER CODE END SensorUTask */
