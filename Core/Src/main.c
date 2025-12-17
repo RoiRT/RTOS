@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -152,31 +153,44 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     float speed, turn;
     float left, right;
 
-    // Zona muerta: sin marcha atrás
-    if (y < DEADZONE)
+    turn  = ((float)x - 50.0f) / 50.0f;        // -1..1
+    if (x == 50 && y == 50)
     {
         __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
         __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 0);
         return;
     }
 
-    // Normalización
-    speed = (float)(y - DEADZONE) / 50.0f;    // 0..1
-    turn  = ((float)x - 50.0f) / 50.0f;        // -1..1
+    if (y > DEADZONE)
+    {
+        speed = (float)(y - DEADZONE) / 50.0f;   // 0..1
+    }
+    else
+    {
+        speed = 0.0f;
+    }
 
-    // Control diferencial
-    left  = speed * (1.0f - turn);
-    right = speed * (1.0f + turn);
+    // Giro en parado
+	if (speed == 0.0f)
+	{
+		left  = -turn;
+		right =  turn;
+	}
+	else
+	{
+		left  = speed * (1.0f - turn);
+		right = speed * (1.0f + turn);
+	}
 
     // Limitar
-    if (left < 0) left = 0;
-    if (right < 0) right = 0;
-    if (left > 1) left = 1;
-    if (right > 1) right = 1;
+    if (left  < -1) left  = -1;
+    if (right < -1) right = -1;
+    if (left  >  1) left  =  1;
+    if (right >  1) right =  1;
 
     // Aplicar PWM
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(fabs(left)));
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(fabs(right)));
 }
 
 void DriveAuto(void)
