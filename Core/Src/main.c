@@ -155,7 +155,7 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
 
     if (x == 50 && y == 50)
 	{
-		__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 0);
 		return;
 	}
@@ -196,7 +196,7 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     }
 
     // Aplicar PWM
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, map_float_to_pwm(left));
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
 
@@ -234,7 +234,7 @@ void DriveAuto(void)
         right = AUTO_FAST_SPEED;
     }
 
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, map_float_to_pwm(left));
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, map_float_to_pwm(left));
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
 
@@ -302,7 +302,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   //HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
   HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   /* USER CODE END 2 */
 
@@ -490,17 +490,17 @@ static void MX_TIM3_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
 
   /* USER CODE BEGIN TIM3_Init 1 */
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 7;
+  htim3.Init.Prescaler = 15;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 999;
+  htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -510,7 +510,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  if (HAL_TIM_IC_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -520,18 +520,17 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_BOTHEDGE;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim3, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
-  HAL_TIM_MspPostInit(&htim3);
 
 }
 
@@ -549,17 +548,17 @@ static void MX_TIM4_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM4_Init 1 */
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 15;
+  htim4.Init.Prescaler = 7;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 65535;
+  htim4.Init.Period = 999;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
   {
     Error_Handler();
@@ -569,7 +568,7 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_IC_Init(&htim4) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -579,17 +578,18 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_BOTHEDGE;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM4_Init 2 */
 
   /* USER CODE END TIM4_Init 2 */
+  HAL_TIM_MspPostInit(&htim4);
 
 }
 
@@ -649,11 +649,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF2_TIM4;
+  GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
@@ -673,7 +673,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance != TIM4) return;
+    if (htim->Instance != TIM3) return;
 
     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
 	{
@@ -847,8 +847,8 @@ void SensorUTask(void *argument)
     uint32_t flags;
     float distance;
 
-	HAL_TIM_Base_Start(&htim4);
-	HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);
+	HAL_TIM_Base_Start(&htim3);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
 
 	for(;;)
 	{
