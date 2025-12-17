@@ -39,11 +39,11 @@
 #define MODE_AUTO   (1 << 1)
 
 #define AUTO_STOP_CM     15.0f
-#define AUTO_SLOW_CM     30.0f
+#define AUTO_SLOW_CM     50.0f
 
 #define AUTO_FAST_SPEED  0.6f
 #define AUTO_SLOW_SPEED  0.3f
-#define AUTO_TURN_SPEED  0.4f
+#define AUTO_TURN_SPEED  0.1f
 
 /* USER CODE END PD */
 
@@ -170,7 +170,6 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
 
     if (speed < 0.05f && fabs(turn) > 0.05f)
     {
-		// Giro en casi parado → solo una rueda
 		if (turn > 0)
 		{
 			left  = 0.0f;
@@ -184,18 +183,15 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     }
     else
     {
-        // Avance normal con giro
         left  = speed * (1.0f - turn);
         right = speed * (1.0f + turn);
 
-        // Asegurar rango 0..1
         if (left  < 0) left  = 0;
         if (right < 0) right = 0;
         if (left  > 1) left  = 1;
         if (right > 1) right = 1;
     }
 
-    // Aplicar PWM
     __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, map_float_to_pwm(left));
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, map_float_to_pwm(right));
 }
@@ -663,10 +659,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART1) {
 		char c = rx_byte;
 
-		// Meter el carácter en la cola SIN BLOQUEO (desde ISR)
 		osMessageQueuePut(myQueue01Handle, &c, 0, 0);
-
-		// Reiniciar recepción
 		HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 	}
 }
@@ -679,13 +672,11 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	{
 
 		static uint32_t ic_rise = 0;
-        static uint8_t waiting_rise = 1;  // empezar esperando subida
         uint32_t ic_val = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
 
-		if (waiting_rise) // pin ECHO, HIGH = subida
-		{
+        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4) == GPIO_PIN_SET)
+        {
 			ic_rise = ic_val;
-			waiting_rise  = 0;
 		}
 		else
 		{
@@ -696,7 +687,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 				diff = (htim->Init.Period - ic_rise) + ic_val;
 
 			osMessageQueuePut(myQueue02Handle, &diff, 0, 0);
-			waiting_rise = 1;
 		}
 	}
 }
@@ -737,7 +727,6 @@ void TestTask(void *argument)
 	uint8_t idx = 0;
 
 	for (;;) {
-		// Espera bloqueante: eficiente
 		if (osMessageQueueGet(myQueue01Handle, &c, NULL, osWaitForever)== osOK) {
 			// 1) Modo M / A
 			if (c == 'C') {
@@ -812,7 +801,7 @@ void PWMTask(void *argument)
 
 				DriveFromJoystick(x, y);
 
-				osDelay(20);   // 50 Hz
+				osDelay(20);
 			}
 		}
 		// ===== MODO AUTOM�?TICO =====
@@ -826,7 +815,7 @@ void PWMTask(void *argument)
 
 				DriveAuto();
 
-				osDelay(500);   // control más lento
+				osDelay(50);
 			}
 		}
     }
@@ -860,12 +849,10 @@ void SensorUTask(void *argument)
 		                );
 
 		if (flags & MODE_AUTO) {
-		// 1. Resetear el flag de medición
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-			osDelay(1); // Usamos FreeRTOS delay (1ms > 10us)
+			for (volatile int i = 0; i < 120; i++); //  (10us)
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
 
-			//if (osMessageQueueGet(myQueue02Handle, &diff, NULL, osWaitForever) == osOK)
 			if (osMessageQueueGet(myQueue02Handle, &diff, NULL, 100) == osOK)
 			{
 				distance = diff / 58.0f;
@@ -874,7 +861,7 @@ void SensorUTask(void *argument)
 				osMutexRelease(controlMutexHandle);
 			}
 
-			osDelay(150); // Medir cada 500ms
+			osDelay(50);
 		}
 	}
   /* USER CODE END SensorUTask */
