@@ -118,7 +118,7 @@ uint8_t joy_y=50;   // 0–100
 
 volatile uint32_t ic_rise = 0;
 volatile uint32_t ic_fall = 0;
-float Distance_cm = 0.0f;
+float Distance_cm = 50.0f;
 
 /* USER CODE END PV */
 
@@ -311,7 +311,7 @@ int main(void)
   myQueue01Handle = osMessageQueueNew (32, sizeof(char), &myQueue01_attributes);
 
   /* creation of myQueue02 */
-  myQueue02Handle = osMessageQueueNew (32, sizeof(uint32_t), &myQueue02_attributes);
+  myQueue02Handle = osMessageQueueNew (4, sizeof(uint32_t), &myQueue02_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
 	/* add queues, ... */
@@ -630,7 +630,7 @@ static void MX_GPIO_Init(void)
 
   GPIO_InitStruct.Pin = GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Alternate = GPIO_AF2_TIM4;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -853,7 +853,7 @@ void SensorUTask(void *argument)
 				osMutexRelease(controlMutexHandle);
 			}
 
-			osDelay(500); // Medir cada 500ms
+			osDelay(150); // Medir cada 500ms
 		}
 	}
   /* USER CODE END SensorUTask */
