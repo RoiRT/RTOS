@@ -160,6 +160,8 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
 		return;
 	}
 
+    turn = ((float)x - 50.0f) / 50.0f;   // -1..1
+
     if (y > DEADZONE)
 		speed = (float)(y - DEADZONE) / (100.0f - DEADZONE); // 0..1
 	else
