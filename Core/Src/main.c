@@ -171,11 +171,11 @@ void DriveFromJoystick(uint8_t x, uint8_t y)
     }
 
     // Giro en parado
-	if (speed == 0.0f)
-	{
-		left  = -turn;
-		right =  turn;
-	}
+    if (speed == 0.0f)
+    {
+        left  = (turn > 0) ? 0.0f : fabs(turn);
+        right = (turn > 0) ? fabs(turn) : 0.0f;
+    }
 	else
 	{
 		left  = speed * (1.0f - turn);
